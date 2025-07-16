@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import { toast } from '@/hooks/use-toast';
+import { Toaster } from '@/components/ui/toaster';
 import Icon from '@/components/ui/icon';
 
 const Index = () => {
@@ -31,8 +33,15 @@ const Index = () => {
   const [newPublication, setNewPublication] = useState({
     title: '',
     type: 'Статья',
-    description: ''
+    description: '',
+    content: ''
   });
+
+  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
+  const [rootFiles, setRootFiles] = useState<File[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const rootFileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const addPublication = () => {
     if (newPublication.title && newPublication.description) {
@@ -42,7 +51,58 @@ const Index = () => {
         date: new Date().toISOString().split('T')[0],
         status: 'Черновик'
       }]);
-      setNewPublication({ title: '', type: 'Статья', description: '' });
+      setNewPublication({ title: '', type: 'Статья', description: '', content: '' });
+      setUploadedFiles([]);
+      toast({ title: 'Публикация создана!', description: 'Новая публикация добавлена в черновики' });
+    }
+  };
+
+  const pasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      setNewPublication({ ...newPublication, content: text });
+      toast({ title: 'Текст вставлен!', description: 'Содержимое буфера обмена добавлено' });
+    } catch (err) {
+      toast({ title: 'Ошибка', description: 'Не удалось получить доступ к буферу обмена', variant: 'destructive' });
+    }
+  };
+
+  const copyWebsiteLink = () => {
+    const url = window.location.href;
+    navigator.clipboard.writeText(url).then(() => {
+      toast({ title: 'Ссылка скопирована!', description: 'Ссылка на сайт скопирована в буфер обмена' });
+    }).catch(() => {
+      toast({ title: 'Ошибка', description: 'Не удалось скопировать ссылку', variant: 'destructive' });
+    });
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const validFiles = Array.from(files).filter(file => 
+        file.type === 'application/pdf' || 
+        file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+        file.type === 'application/msword'
+      );
+      setUploadedFiles(prev => [...prev, ...validFiles]);
+      toast({ title: 'Файлы загружены!', description: `Загружено ${validFiles.length} файлов` });
+    }
+  };
+
+  const handleRootFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files) {
+      const fileArray = Array.from(files);
+      setRootFiles(prev => [...prev, ...fileArray]);
+      toast({ title: 'Файлы загружены в корень!', description: `Загружено ${fileArray.length} файлов в корневую папку` });
+    }
+  };
+
+  const removeFile = (index: number, isRoot: boolean = false) => {
+    if (isRoot) {
+      setRootFiles(prev => prev.filter((_, i) => i !== index));
+    } else {
+      setUploadedFiles(prev => prev.filter((_, i) => i !== index));
     }
   };
 
@@ -50,6 +110,7 @@ const Index = () => {
     setPublications(publications.map(pub => 
       pub.id === id ? { ...pub, status: 'Опубликовано' } : pub
     ));
+    toast({ title: 'Публикация опубликована!', description: 'Статья успешно опубликована' });
   };
 
   return (
@@ -75,6 +136,15 @@ const Index = () => {
               <a href="#library" className="text-gray-700 hover:text-purple-600 transition-colors">Библиотека</a>
               <a href="#files" className="text-gray-700 hover:text-purple-600 transition-colors">Файлы</a>
               <a href="#profile" className="text-gray-700 hover:text-purple-600 transition-colors">Профиль</a>
+              <Button 
+                onClick={copyWebsiteLink}
+                variant="outline" 
+                size="sm"
+                className="border-purple-200 hover:bg-purple-50"
+              >
+                <Icon name="Share" size={16} className="mr-2" />
+                Поделиться
+              </Button>
             </nav>
           </div>
         </div>
@@ -139,6 +209,74 @@ const Index = () => {
                           placeholder="Краткое описание работы"
                           rows={4}
                         />
+                      </div>
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <Label htmlFor="content">Содержание статьи</Label>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            onClick={pasteFromClipboard}
+                            className="text-purple-600 hover:text-purple-700"
+                          >
+                            <Icon name="Clipboard" size={16} className="mr-1" />
+                            Вставить из буфера
+                          </Button>
+                        </div>
+                        <Textarea
+                          id="content"
+                          ref={textareaRef}
+                          value={newPublication.content}
+                          onChange={(e) => setNewPublication({...newPublication, content: e.target.value})}
+                          placeholder="Вставьте или введите полный текст статьи..."
+                          rows={8}
+                          className="font-mono text-sm"
+                        />
+                      </div>
+                      <div>
+                        <Label>Прикрепить файлы (PDF, DOCX)</Label>
+                        <div className="flex gap-2 mt-2">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="flex-1"
+                          >
+                            <Icon name="Paperclip" size={16} className="mr-2" />
+                            Выбрать файлы
+                          </Button>
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            multiple
+                            accept=".pdf,.docx,.doc"
+                            onChange={handleFileUpload}
+                            className="hidden"
+                          />
+                        </div>
+                        {uploadedFiles.length > 0 && (
+                          <div className="mt-2 space-y-1">
+                            {uploadedFiles.map((file, index) => (
+                              <div key={index} className="flex items-center justify-between bg-gray-50 p-2 rounded">
+                                <div className="flex items-center gap-2">
+                                  <Icon name="File" size={16} className="text-gray-600" />
+                                  <span className="text-sm">{file.name}</span>
+                                  <span className="text-xs text-gray-500">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
+                                </div>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => removeFile(index)}
+                                  className="text-red-600 hover:text-red-700"
+                                >
+                                  <Icon name="X" size={14} />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
                       <Button onClick={addPublication} className="w-full bg-purple-600 hover:bg-purple-700">
                         Создать публикацию
@@ -254,17 +392,102 @@ const Index = () => {
             <p className="text-gray-600 text-lg">Загрузите и управляйте документами, презентациями и исследовательскими материалами</p>
           </div>
           
-          <div className="max-w-2xl mx-auto">
+          <div className="grid md:grid-cols-2 gap-8 max-w-6xl mx-auto">
+            {/* Document Files */}
             <div className="bg-white rounded-2xl p-8 shadow-lg border border-purple-100">
-              <div className="border-2 border-dashed border-purple-200 rounded-xl p-12 text-center hover:border-purple-400 transition-colors">
-                <Icon name="Upload" size={48} className="mx-auto mb-4 text-purple-400" />
-                <h4 className="text-xl font-semibold mb-2 text-gray-700">Загрузить файлы</h4>
-                <p className="text-gray-500 mb-6">Перетащите файлы сюда или нажмите для выбора</p>
-                <Button className="bg-purple-600 hover:bg-purple-700">
-                  <Icon name="FolderOpen" size={20} className="mr-2" />
+              <div className="flex items-center mb-6">
+                <Icon name="FileText" size={24} className="text-purple-600 mr-3" />
+                <h4 className="text-xl font-semibold text-gray-700">Документы статей</h4>
+              </div>
+              <div className="border-2 border-dashed border-purple-200 rounded-xl p-8 text-center hover:border-purple-400 transition-colors mb-4">
+                <Icon name="Upload" size={32} className="mx-auto mb-3 text-purple-400" />
+                <p className="text-gray-500 mb-4">PDF, DOCX файлы для статей</p>
+                <Button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-purple-600 hover:bg-purple-700"
+                >
+                  <Icon name="FolderOpen" size={16} className="mr-2" />
                   Выбрать файлы
                 </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept=".pdf,.docx,.doc"
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
               </div>
+              {uploadedFiles.length > 0 && (
+                <div className="space-y-2">
+                  <h5 className="font-semibold text-sm text-gray-600">Загруженные файлы:</h5>
+                  {uploadedFiles.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Icon name="File" size={16} className="text-gray-600" />
+                        <span className="text-sm font-medium">{file.name}</span>
+                        <span className="text-xs text-gray-500">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeFile(index)}
+                        className="text-red-600 hover:text-red-700 h-8 w-8 p-0"
+                      >
+                        <Icon name="X" size={14} />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Root Directory */}
+            <div className="bg-white rounded-2xl p-8 shadow-lg border border-indigo-100">
+              <div className="flex items-center mb-6">
+                <Icon name="FolderOpen" size={24} className="text-indigo-600 mr-3" />
+                <h4 className="text-xl font-semibold text-gray-700">Корневая папка сайта</h4>
+              </div>
+              <div className="border-2 border-dashed border-indigo-200 rounded-xl p-8 text-center hover:border-indigo-400 transition-colors mb-4">
+                <Icon name="HardDrive" size={32} className="mx-auto mb-3 text-indigo-400" />
+                <p className="text-gray-500 mb-4">Любые файлы для корня сайта</p>
+                <Button 
+                  onClick={() => rootFileInputRef.current?.click()}
+                  className="bg-indigo-600 hover:bg-indigo-700"
+                >
+                  <Icon name="Plus" size={16} className="mr-2" />
+                  Добавить в корень
+                </Button>
+                <input
+                  ref={rootFileInputRef}
+                  type="file"
+                  multiple
+                  onChange={handleRootFileUpload}
+                  className="hidden"
+                />
+              </div>
+              {rootFiles.length > 0 && (
+                <div className="space-y-2">
+                  <h5 className="font-semibold text-sm text-gray-600">Файлы в корне:</h5>
+                  {rootFiles.map((file, index) => (
+                    <div key={index} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <Icon name="File" size={16} className="text-gray-600" />
+                        <span className="text-sm font-medium">{file.name}</span>
+                        <span className="text-xs text-gray-500">({(file.size / 1024 / 1024).toFixed(1)} MB)</span>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeFile(index, true)}
+                        className="text-red-600 hover:text-red-700 h-8 w-8 p-0"
+                      >
+                        <Icon name="X" size={14} />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -304,6 +527,7 @@ const Index = () => {
           </div>
         </div>
       </footer>
+      <Toaster />
     </div>
   );
 };
